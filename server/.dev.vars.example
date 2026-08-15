@@ -1,0 +1,3 @@
+TEAMLEADER_CLIENT_ID=replace_me
+TEAMLEADER_CLIENT_SECRET=replace_me
+COOKIE_ENCRYPTION_KEY=generate_64_hex_characters
