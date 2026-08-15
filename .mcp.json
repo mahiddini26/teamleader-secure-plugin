@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "teamleader-secure": {
+      "type": "http",
+      "url": "https://teamleader-chatgpt.mm-979.workers.dev/mcp"
+    }
+  }
+}
