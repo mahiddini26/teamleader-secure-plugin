@@ -8,6 +8,10 @@ import type { AuthRequest, ClientInfo } from "@cloudflare/workers-oauth-provider
  * Represents errors that occur during OAuth operations with standardized error codes and descriptions.
  */
 export class OAuthError extends Error {
+	public code: string;
+	public description: string;
+	public statusCode: number;
+
 	/**
 	 * Creates a new OAuthError
 	 * @param code - The OAuth error code (e.g., "invalid_request", "invalid_grant")
@@ -15,11 +19,14 @@ export class OAuthError extends Error {
 	 * @param statusCode - HTTP status code to return (defaults to 400)
 	 */
 	constructor(
-		public code: string,
-		public description: string,
-		public statusCode = 400,
+		code: string,
+		description: string,
+		statusCode = 400,
 	) {
 		super(description);
+		this.code = code;
+		this.description = description;
+		this.statusCode = statusCode;
 		this.name = "OAuthError";
 	}
 
@@ -49,6 +56,10 @@ export interface OAuthStateResult {
 	 * The generated state token to be used in OAuth authorization requests
 	 */
 	stateToken: string;
+}
+
+export interface OAuthApprovalResult {
+	approvalToken: string;
 }
 
 /**
@@ -265,6 +276,38 @@ export async function createOAuthState(
 	return { stateToken };
 }
 
+export async function createOAuthApproval(
+	oauthReqInfo: AuthRequest,
+	kv: KVNamespace,
+	ttl = 600,
+): Promise<OAuthApprovalResult> {
+	const approvalToken = crypto.randomUUID();
+	await kv.put(`oauth:approval:${approvalToken}`, JSON.stringify(oauthReqInfo), {
+		expirationTtl: ttl,
+	});
+	return { approvalToken };
+}
+
+export async function consumeOAuthApproval(
+	approvalToken: string,
+	kv: KVNamespace,
+): Promise<AuthRequest> {
+	if (!/^[0-9a-f-]{36}$/i.test(approvalToken)) {
+		throw new OAuthError("invalid_request", "Invalid approval token", 400);
+	}
+	const key = `oauth:approval:${approvalToken}`;
+	const stored = await kv.get(key);
+	if (!stored) throw new OAuthError("invalid_request", "Approval expired or already used", 400);
+	await kv.delete(key);
+	try {
+		const requestInfo = JSON.parse(stored) as AuthRequest;
+		if (!requestInfo.clientId) throw new Error("missing client id");
+		return requestInfo;
+	} catch {
+		throw new OAuthError("server_error", "Invalid approval data", 500);
+	}
+}
+
 /**
  * Binds an OAuth state token to the user's browser session using a secure cookie.
  * This prevents CSRF attacks where an attacker's state token is used by a victim.
@@ -321,7 +364,15 @@ export async function validateOAuthState(
 	}
 
 	// Validate state exists in KV (secure, one-time use, with TTL)
-	const storedDataJson = await kv.get(`oauth:state:${stateFromQuery}`);
+	const stateKey = `oauth:state:${stateFromQuery}`;
+	let storedDataJson = await kv.get(stateKey);
+	// Workers KV is eventually consistent across edge locations. Teamleader can
+	// redirect back before a newly-created state has propagated to the location
+	// serving the callback, so retry briefly instead of rejecting a valid flow.
+	for (let attempt = 0; !storedDataJson && attempt < 20; attempt++) {
+		await new Promise((resolve) => setTimeout(resolve, 250));
+		storedDataJson = await kv.get(stateKey);
+	}
 	if (!storedDataJson) {
 		throw new OAuthError("invalid_request", "Invalid or expired state", 400);
 	}
@@ -366,7 +417,7 @@ export async function validateOAuthState(
 	}
 
 	// Delete state from KV (one-time use)
-	await kv.delete(`oauth:state:${stateFromQuery}`);
+	await kv.delete(stateKey);
 
 	// Clear the session binding cookie (one-time use per OAuth flow)
 	const clearCookie = `${consentedStateCookieName}=; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=0`;
@@ -436,7 +487,7 @@ export interface ApprovalDialogOptions {
 	 * Arbitrary state data to pass through the approval flow
 	 * Will be encoded in the form and returned when approval is complete
 	 */
-	state: Record<string, any>;
+	state: Record<string, unknown>;
 	/**
 	 * CSRF token to include in the form
 	 */
@@ -765,7 +816,7 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
               <input type="hidden" name="csrf_token" value="${csrfToken}">
 
               <div class="actions">
-                <button type="button" class="button button-secondary" onclick="window.history.back()">Cancel</button>
+	                <a class="button button-secondary" href="/">Cancel</a>
                 <button type="submit" class="button button-primary">Approve</button>
               </div>
             </form>
@@ -777,9 +828,11 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
 
 	return new Response(htmlContent, {
 		headers: {
-			"Content-Security-Policy": "frame-ancestors 'none'",
-			"Content-Type": "text/html; charset=utf-8",
-			"Set-Cookie": setCookie,
+				"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+				"Content-Type": "text/html; charset=utf-8",
+				"Referrer-Policy": "no-referrer",
+				"Set-Cookie": setCookie,
+				"X-Content-Type-Options": "nosniff",
 			"X-Frame-Options": "DENY",
 		},
 	});

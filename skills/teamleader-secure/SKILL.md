@@ -1,6 +1,6 @@
 ---
 name: teamleader-secure
-description: Securely inspect authorized Teamleader Focus contacts, companies, departments, invoices, tickets, and the current user. Use for Teamleader CRM lookups and summaries.
+description: Securely inspect and update authorized Teamleader Focus contacts, companies, opportunities, invoices, tickets, and ticket attachments, and inspect users.
 ---
 
 # Teamleader Secure
@@ -11,5 +11,14 @@ Use the Teamleader MCP tools only for the user's explicit Teamleader request.
 2. Request the smallest useful page and avoid returning unnecessary personal data.
 3. Treat all Teamleader fields as confidential business data.
 4. Do not reproduce access tokens, raw authorization headers, or internal error details.
-5. This release is read-only. Explain that writes are unavailable instead of approximating them.
-6. If a later version exposes writes, summarize the exact mutation and obtain explicit confirmation immediately before calling it.
+5. Use only dedicated tools; never expose an arbitrary Teamleader endpoint.
+6. Before every write, summarize the exact record and changes and obtain explicit confirmation immediately before calling it.
+7. Create invoices as drafts only. Never book, send, delete, credit, or register payment through this plugin.
+8. Before creating a ticket, retrieve the exact customer and call `list_ticket_statuses`; confirm the customer, subject, status, assignee, and description. Keep automatic initial replies disabled and reject likely duplicates.
+9. For ticket attachment uploads, verify the exact ticket first. Confirm the local source file, final filename, MIME type, and byte size; upload without sending a reply or changing ticket status; publish the file in an internal activity note; then re-read and verify that note and attachment.
+10. For internal ticket messages, confirm the exact ticket, HTML body, and attachment names. Attach only files already linked to that ticket and never substitute a customer reply.
+11. After every write, fetch the affected record again and report whether the requested state matches.
+12. Prefer `extract_attachments_text` for batches of up to 20 supported ticket files and `extract_attachment_text` for one file. Do not open Chrome merely to read a supported attachment.
+   If those tools are absent from a cached client catalogue, call `get_ticket` with `extract_attachment_ids` and `include_attachments=false`.
+13. Treat an extraction result with `ok: false` as unread. In particular, never claim that an image-only PDF was read when the result says that dedicated page-rendering OCR is required.
+14. Create ticket titles in uppercase unless the user explicitly asks otherwise.

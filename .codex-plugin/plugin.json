@@ -1,7 +1,7 @@
 {
   "name": "teamleader-secure",
-  "version": "0.2.0",
-  "description": "Secure read-only access to APA ASSURANCES Teamleader Focus data.",
+  "version": "0.8.3",
+  "description": "Secure Teamleader Focus access with targeted reads and explicitly confirmed updates.",
   "author": {
     "name": "APA ASSURANCES",
     "email": "mm@apa-insurances.com"
@@ -10,15 +10,15 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "APA Teamleader",
-    "shortDescription": "Securely consult Teamleader Focus.",
-    "longDescription": "OAuth-protected, read-only access to authorized Teamleader Focus contacts, companies, departments, invoices and tickets.",
+    "shortDescription": "Securely consult and update Teamleader Focus.",
+    "longDescription": "OAuth-protected access to authorized Teamleader Focus contacts, companies, opportunities, users, invoices, tickets and attachments, with explicit confirmation before updates.",
     "developerName": "APA ASSURANCES",
     "category": "Productivity",
-    "capabilities": ["Interactive", "Read"],
+    "capabilities": ["Interactive", "Read", "Write"],
     "defaultPrompt": [
-      "List my Teamleader departments.",
       "Find a Teamleader company.",
-      "Review outstanding invoices and recent tickets."
+      "Review outstanding invoices and recent tickets.",
+      "Extract the text from attachments in a Teamleader ticket."
     ]
   }
 }

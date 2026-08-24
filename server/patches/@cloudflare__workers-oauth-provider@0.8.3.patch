@@ -1,0 +1,17 @@
+diff --git a/dist/oauth-provider.js b/dist/oauth-provider.js
+index c0e4e09da4ad5605a54bd26f4d8878f5dabd0dc4..e4a89370540ce27540ca18384ece08b6a5fe5a37 100644
+--- a/dist/oauth-provider.js
++++ b/dist/oauth-provider.js
+@@ -2390,7 +2390,11 @@ var OAuthProviderImpl = class OAuthProviderImpl {
+ 				contacts: OAuthProviderImpl.validateStringArray(rawMetadata.contacts, "contacts"),
+ 				grantTypes: OAuthProviderImpl.validateStringArray(rawMetadata.grant_types, "grant_types") || ["authorization_code"],
+ 				responseTypes: OAuthProviderImpl.validateStringArray(rawMetadata.response_types, "response_types") || ["code"],
+-				tokenEndpointAuthMethod: tokenEndpointAuthMethod || "none"
++				// ChatGPT advertises private_key_jwt as its preferred method while also
++				// explicitly supporting "none", then performs the PKCE token exchange as
++				// a public client. Prefer the advertised public-client fallback so the
++				// exchange remains protected by S256 PKCE and the exact redirect URI.
++				tokenEndpointAuthMethod: tokenEndpointAuthMethod === "private_key_jwt" && Array.isArray(rawMetadata.token_endpoint_auth_methods_supported) && rawMetadata.token_endpoint_auth_methods_supported.includes("none") ? "none" : tokenEndpointAuthMethod || "none"
+ 			};
+ 		} finally {
+ 			clearTimeout(timeoutId);

@@ -1,24 +1,25 @@
 {
   "name": "apa-teamleader-secure-mcp",
-  "version": "0.2.0",
+  "version": "0.8.3",
   "private": true,
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.8.1",
-    "@modelcontextprotocol/sdk": "1.29.0",
-    "agents": "^0.17.1",
-    "hono": "^4.12.27",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "agents": "^0.20.1",
+    "hono": "^4.13.3",
     "just-pick": "^4.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260628.1",
+    "@types/node": "^26.2.0",
     "typescript": "^6.0.3",
-    "wrangler": "^4.105.0"
+    "wrangler": "^4.124.0"
   }
 }

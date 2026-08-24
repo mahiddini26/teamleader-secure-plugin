@@ -3,6 +3,8 @@ import { Hono } from "hono";
 import {
 	addApprovedClient,
 	bindStateToSession,
+	consumeOAuthApproval,
+	createOAuthApproval,
 	createOAuthState,
 	generateCSRFProtection,
 	isClientApproved,
@@ -18,6 +20,7 @@ import {
 	teamleaderCall,
 	type Props,
 } from "./utils";
+import { assertCompleteOAuthScopes } from "./safety";
 
 const app = new Hono<{ Bindings: Env & { OAUTH_PROVIDER: OAuthHelpers } }>();
 
@@ -37,38 +40,41 @@ app.get("/authorize", async (c) => {
 	}
 
 	const { token, setCookie } = generateCSRFProtection();
+	const { approvalToken } = await createOAuthApproval(requestInfo, c.env.OAUTH_KV);
 	return renderApprovalDialog(c.req.raw, {
 		client: await c.env.OAUTH_PROVIDER.lookupClient(requestInfo.clientId),
 		csrfToken: token,
 		server: {
 			name: "APA Teamleader Secure",
-			description: "Read-only access to authorized Teamleader Focus business data.",
+			description: "Secure access to authorized Teamleader Focus business data, with explicit confirmation required for writes.",
 		},
 		setCookie,
-		state: { oauthReqInfo: requestInfo },
+		state: { approvalToken },
 	});
 });
 
 app.post("/authorize", async (c) => {
 	try {
 		const form = await c.req.raw.formData();
-		validateCSRFToken(form, c.req.raw);
+		const { clearCookie } = validateCSRFToken(form, c.req.raw);
 		const encoded = form.get("state");
 		if (typeof encoded !== "string") return c.text("Missing state", 400);
-		const state = JSON.parse(atob(encoded)) as { oauthReqInfo?: AuthRequest };
-		if (!state.oauthReqInfo?.clientId) return c.text("Invalid state", 400);
+		const state = JSON.parse(atob(encoded)) as { approvalToken?: string };
+		if (!state.approvalToken) return c.text("Invalid state", 400);
+		const requestInfo = await consumeOAuthApproval(state.approvalToken, c.env.OAUTH_KV);
 
 		const approved = await addApprovedClient(
 			c.req.raw,
-			state.oauthReqInfo.clientId,
+			requestInfo.clientId,
 			c.env.COOKIE_ENCRYPTION_KEY,
 		);
-		const { stateToken } = await createOAuthState(state.oauthReqInfo, c.env.OAUTH_KV);
+		const { stateToken } = await createOAuthState(requestInfo, c.env.OAUTH_KV);
 		const { setCookie } = await bindStateToSession(stateToken);
 		const headers = new Headers();
 		headers.append("Set-Cookie", approved);
+		headers.append("Set-Cookie", clearCookie);
 		headers.append("Set-Cookie", setCookie);
-		return redirectToTeamleader(c.env, c.req.raw, stateToken, Object.fromEntries(headers));
+		return redirectToTeamleader(c.env, c.req.raw, stateToken, headers);
 	} catch (error) {
 		if (error instanceof OAuthError) return error.toResponse();
 		return c.text("Authorization failed", 400);
@@ -79,24 +85,27 @@ function redirectToTeamleader(
 	workerEnv: Env,
 	request: Request,
 	state: string,
-	headers: Record<string, string>,
+	headers: Headers | Record<string, string>,
 ) {
+	const responseHeaders = new Headers(headers);
+	responseHeaders.set(
+		"Location",
+		getUpstreamAuthorizeUrl({
+			clientId: workerEnv.TEAMLEADER_CLIENT_ID,
+			redirectUri: new URL("/oauth/callback", request.url).href,
+			state,
+		}),
+	);
 	return new Response(null, {
 		status: 302,
-		headers: {
-			...headers,
-			location: getUpstreamAuthorizeUrl({
-				clientId: workerEnv.TEAMLEADER_CLIENT_ID,
-				redirectUri: new URL("/oauth/callback", request.url).href,
-				state,
-			}),
-		},
+		headers: responseHeaders,
 	});
 }
 
 app.get("/oauth/callback", async (c) => {
 	try {
 		const { oauthReqInfo, clearCookie } = await validateOAuthState(c.req.raw, c.env.OAUTH_KV);
+		const scopes = assertCompleteOAuthScopes(oauthReqInfo.scope);
 		const code = c.req.query("code");
 		if (!code) return c.text("Missing authorization code", 400);
 		const redirectUri = new URL("/oauth/callback", c.req.url).href;
@@ -112,13 +121,17 @@ app.get("/oauth/callback", async (c) => {
 			request: oauthReqInfo,
 			userId,
 			metadata: { label: displayName },
-			scope: oauthReqInfo.scope.filter((scope) => scope === "teamleader:read"),
-			props: { userId, displayName } satisfies Props,
+			scope: scopes,
+			props: { userId, displayName, scopes } satisfies Props,
 		});
 		const headers = new Headers({ Location: redirectTo });
 		if (clearCookie) headers.set("Set-Cookie", clearCookie);
 		return new Response(null, { status: 302, headers });
-	} catch {
+	} catch (error) {
+		console.error(
+			"OAuth callback failed",
+			error instanceof Error ? error.message : "Unknown OAuth callback error",
+		);
 		return c.text("OAuth callback failed", 400);
 	}
 });

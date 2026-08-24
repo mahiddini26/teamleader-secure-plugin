@@ -10,4 +10,6 @@ Report security issues privately to mm@apa-insurances.com. Do not include produc
 - Restrict Cloudflare access to APA administrators with MFA.
 - Review Teamleader OAuth scopes quarterly and after every tool addition.
 - Revoke the Teamleader integration and clear `teamleader-token:*` KV records when access is withdrawn.
-- Add write tools only after a separate security review and explicit user-confirmation design.
+- Keep every write tool behind an explicit user-confirmation step and review its scope whenever the tool changes.
+- Enforce `teamleader:write` inside every mutation handler; schema confirmation alone is not authorization.
+- Run TypeScript, unit tests, dependency audit, and Wrangler dry-run before every production deployment.

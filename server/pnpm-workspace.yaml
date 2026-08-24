@@ -2,3 +2,5 @@ allowBuilds:
   core-js-pure: false
   esbuild: true
   workerd: true
+patchedDependencies:
+  '@cloudflare/workers-oauth-provider@0.8.3': patches/@cloudflare__workers-oauth-provider@0.8.3.patch
