@@ -84,7 +84,7 @@ function escapeHtml(value: string) {
 }
 
 export class TeamleaderMCP extends McpAgent<Env, Record<string, never>, Props> {
-	server = new McpServer({ name: "APA Teamleader Secure", version: "0.8.3" });
+	server = new McpServer({ name: "APA Teamleader Secure", version: "0.8.4" });
 
 	async init() {
 		this.server.tool(
@@ -1005,7 +1005,7 @@ export class TeamleaderMCP extends McpAgent<Env, Record<string, never>, Props> {
 			{ readOnlyHint: true, destructiveHint: false, openWorldHint: false },
 			async ({ ids, max_characters_per_file }) => {
 				const uniqueIds = [...new Set(ids)];
-				const files = await Promise.all(uniqueIds.map((id) => this.getTeamleaderFile(id, false)));
+				// Fetch metadata for every file. Besides preserving the real name and MIME\n\t\t\t\t// type, this avoids dereferencing a null `files.info` result in\n\t\t\t\t// getTeamleaderFile and lets us enforce the declared per-file size limit\n\t\t\t\t// before downloading the batch.\n\t\t\t\tconst files = await Promise.all(uniqueIds.map((id) => this.getTeamleaderFile(id)));
 				return this.result({ files: await this.extractFiles(files, max_characters_per_file) });
 			},
 		);
