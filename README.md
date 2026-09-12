@@ -10,8 +10,9 @@ This plugin connects ChatGPT and Codex to Teamleader Focus through a remote MCP 
 - One-time state, browser binding, CSRF protection, short-lived access tokens, rotating refresh tokens, and server-side token storage.
 - Concurrent refresh protection reuses the newly rotated Teamleader token when two requests refresh at the same time, preventing spurious reconnect failures.
 - Fixed Teamleader API origin and allowlisted tool endpoints; no arbitrary URL proxy.
-- Targeted contact, company, opportunity, user, ticket, invoice, and attachment reads.
-- Explicitly confirmed contact/company/opportunity creation and updates, relationship updates, ticket creation, internal ticket messages, draft invoice creation, and ticket attachment uploads.
+- Targeted contact, company, opportunity, user, task, ticket, invoice, and attachment reads.
+- Explicitly confirmed contact/company/opportunity creation and updates, relationship updates, task creation, ticket creation, internal ticket messages, draft invoice creation, and ticket attachment uploads.
+- Task creation validates the selected work type and every linked Teamleader record, checks for a likely open duplicate on the same due date, and re-reads the created task.
 - Ticket creation validates the customer and status, checks likely duplicates, disables automatic initial replies, and verifies the created record.
 - Internal ticket messages accept only files already linked to the exact ticket and never send a customer reply.
 - Ticket uploads use Teamleader's temporary `files.upload` URL, are published in a verified internal activity note, and are re-read after transfer.
