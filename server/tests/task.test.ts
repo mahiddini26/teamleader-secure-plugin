@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildTaskCreatePayload, findTaskDuplicate } from "../src/task.ts";
+import { buildTaskCreatePayload, findTaskDuplicate, checkTaskDuplicate } from "../src/task.ts";
 
 test("buildTaskCreatePayload matches Teamleader tasks.create", () => {
 	assert.deepEqual(buildTaskCreatePayload({
@@ -50,4 +50,20 @@ test("findTaskDuplicate requires the same normalized title and due date", () => 
 	];
 	assert.equal(findTaskDuplicate(tasks, "Relancer le client", "2026-09-14", normalize)?.id, "duplicate");
 	assert.equal(findTaskDuplicate(tasks, "Préparer le devis", "2026-09-14", normalize), undefined);
+});
+
+test("duplicate detection reads later pages and includes completed tasks", async () => {
+	const pages: number[] = [];
+	const found = await checkTaskDuplicate(async (_endpoint, body: any) => {
+		assert.equal(body.filter.term, undefined);
+		assert.equal(body.filter.completed, undefined);
+		pages.push(body.page.number);
+		return { data: body.page.number === 1 ? Array.from({length:100}, (_,i) => ({id:String(i),title:"Other",due_on:"2026-09-14"})) : [{id:"existing",title:"Imported",due_on:"2026-09-14",completed:true}] };
+	}, { due_from:"2026-09-14",due_by:"2026-09-14" }, "Imported", "2026-09-14", x=>x.toLowerCase());
+	assert.equal(found?.id,"existing");
+	assert.deepEqual(pages,[1,2]);
+});
+
+test("duplicate detection fails closed on malformed responses", async () => {
+	await assert.rejects(checkTaskDuplicate(async()=>({error:"unavailable"}),{},"Task","2026-09-14",x=>x), /creation stopped/);
 });

@@ -828,7 +828,8 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
 
 	return new Response(htmlContent, {
 		headers: {
-				"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+				"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; form-action 'self' https://focus.teamleader.eu; base-uri 'none'; frame-ancestors 'none'",
+				"Cache-Control": "no-store",
 				"Content-Type": "text/html; charset=utf-8",
 				"Referrer-Policy": "no-referrer",
 				"Set-Cookie": setCookie,
