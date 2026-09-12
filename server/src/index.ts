@@ -160,6 +160,127 @@ export class TeamleaderMCP extends McpAgent<Env, Record<string, never>, Props> {
 		);
 
 		this.server.tool(
+			"list_work_types",
+			"List Teamleader work types so an exact work_type_id can be selected before creating a task.",
+			{ page: PAGE },
+			{ readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+			async ({ page }) => this.result(await teamleaderCall(
+				this.env,
+				this.props!.userId,
+				"workTypes.list",
+				{ page },
+			)),
+		);
+
+		this.server.tool(
+			"list_tasks",
+			"List Teamleader tasks using targeted filters. Use this before creating a task to check for likely duplicates for the same customer, assignee and due date.",
+			{
+				term: z.string().trim().min(2).max(255).optional(),
+				user_id: TEAMLEADER_ID.nullable().optional(),
+				customer_type: z.enum(["contact", "company"]).optional(),
+				customer_id: TEAMLEADER_ID.optional(),
+				completed: z.boolean().optional(),
+				scheduled: z.boolean().optional(),
+				due_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+				due_by: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+				page: PAGE,
+			},
+			{ readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+			async ({ term, user_id, customer_type, customer_id, completed, scheduled, due_from, due_by, page }) => {
+				if (Boolean(customer_type) !== Boolean(customer_id)) throw new Error("customer_type and customer_id must be provided together");
+				const filter = {
+					...(term ? { term } : {}),
+					...(user_id !== undefined ? { user_id } : {}),
+					...(customer_type && customer_id ? { customer: { type: customer_type, id: customer_id } } : {}),
+					...(completed !== undefined ? { completed } : {}),
+					...(scheduled !== undefined ? { scheduled } : {}),
+					...(due_from ? { due_from } : {}),
+					...(due_by ? { due_by } : {}),
+				};
+				return this.result(await teamleaderCall(this.env, this.props!.userId, "tasks.list", {
+					...(Object.keys(filter).length ? { filter } : {}),
+					page,
+					sort: [{ field: "due_on", order: "asc" }],
+				}));
+			},
+		);
+
+		this.server.tool(
+			"get_task",
+			"Get one Teamleader task by its exact ID. Read-only.",
+			{ id: TEAMLEADER_ID },
+			{ readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+			async ({ id }) => this.result(await teamleaderCall(this.env, this.props!.userId, "tasks.info", { id })),
+		);
+
+		this.server.tool(
+			"create_task",
+			"Create one Teamleader task after validating every referenced record and checking for a likely duplicate. Retrieve the customer, work type, optional assignee, deal and ticket first, then ask the user to confirm the exact title, description, due date, duration, assignee and links immediately before setting confirmed=true.",
+			{
+				title: z.string().trim().min(1).max(255),
+				description: z.string().max(50_000).optional(),
+				due_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+				work_type_id: TEAMLEADER_ID,
+				estimated_duration_minutes: z.number().int().min(1).max(1440).optional(),
+				assignee_type: z.enum(["user", "team"]).optional(),
+				assignee_id: TEAMLEADER_ID.optional(),
+				customer_type: z.enum(["contact", "company"]).optional(),
+				customer_id: TEAMLEADER_ID.optional(),
+				deal_id: TEAMLEADER_ID.optional(),
+				ticket_id: TEAMLEADER_ID.optional(),
+				project_id: TEAMLEADER_ID.optional(),
+				confirmed: z.literal(true).describe("True only after the user explicitly confirms this exact task creation."),
+			},
+			{ readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+			async ({ title, description, due_on, work_type_id, estimated_duration_minutes, assignee_type, assignee_id, customer_type, customer_id, deal_id, ticket_id, project_id, confirmed: _confirmed }) => {
+				this.requireWriteScope();
+				if (Boolean(assignee_type) !== Boolean(assignee_id)) throw new Error("assignee_type and assignee_id must be provided together");
+				if (Boolean(customer_type) !== Boolean(customer_id)) throw new Error("customer_type and customer_id must be provided together");
+				const validations: Array<Promise<unknown>> = [
+					teamleaderCall(this.env, this.props!.userId, "workTypes.info", { id: work_type_id }),
+				];
+				if (assignee_type === "user" && assignee_id) validations.push(teamleaderCall(this.env, this.props!.userId, "users.info", { id: assignee_id }));
+				if (assignee_type === "team" && assignee_id) validations.push(teamleaderCall(this.env, this.props!.userId, "teams.info", { id: assignee_id }));
+				if (customer_type && customer_id) validations.push(teamleaderCall(this.env, this.props!.userId, customer_type === "company" ? "companies.info" : "contacts.info", { id: customer_id }));
+				if (deal_id) validations.push(teamleaderCall(this.env, this.props!.userId, "deals.info", { id: deal_id }));
+				if (ticket_id) validations.push(teamleaderCall(this.env, this.props!.userId, "tickets.info", { id: ticket_id }));
+				if (project_id) validations.push(teamleaderCall(this.env, this.props!.userId, "projects-v2/projects.info", { id: project_id }));
+				const duplicateFilter = {
+					term: title,
+					completed: false,
+					due_from: due_on,
+					due_by: due_on,
+					...(assignee_type === "user" && assignee_id ? { user_id: assignee_id } : {}),
+					...(customer_type && customer_id ? { customer: { type: customer_type, id: customer_id } } : {}),
+				};
+				const [, duplicates] = await Promise.all([
+					Promise.all(validations),
+					teamleaderCall(this.env, this.props!.userId, "tasks.list", { filter: duplicateFilter, page: { number: 1, size: 20 } }),
+				]) as [unknown, { data?: Array<{ id?: string; title?: string; due_on?: string }> }];
+				const duplicate = (duplicates.data || []).find((task) =>
+					this.normalize(task.title || "") === this.normalize(title) && task.due_on === due_on,
+				);
+				if (duplicate?.id) throw new Error(`An open task with the same title and due date already exists: ${duplicate.id}`);
+				const created = await teamleaderCall(this.env, this.props!.userId, "tasks.create", {
+					title,
+					...(description ? { description } : {}),
+					due_on,
+					work_type_id,
+					...(estimated_duration_minutes ? { estimated_duration: { unit: "min", value: estimated_duration_minutes } } : {}),
+					...(assignee_type && assignee_id ? { assignee: { type: assignee_type, id: assignee_id } } : {}),
+					...(customer_type && customer_id ? { customer: { type: customer_type, id: customer_id } } : {}),
+					...(deal_id ? { deal_id } : {}),
+					...(ticket_id ? { ticket_id } : {}),
+					...(project_id ? { project_id } : {}),
+				}) as { data?: { id?: string }; id?: string };
+				const id = created.data?.id || created.id;
+				if (!id) throw new Error("Teamleader did not return the created task ID");
+				return this.result({ ok: true, id, verified: await teamleaderCall(this.env, this.props!.userId, "tasks.info", { id }) });
+			},
+		);
+
+		this.server.tool(
 			"list_contacts",
 			"Search authorized Teamleader contacts by name, company, email address, or telephone number. Always use this targeted search for a named contact; do not scan successive pages.",
 			CONTACT_SEARCH,
@@ -1005,7 +1126,11 @@ export class TeamleaderMCP extends McpAgent<Env, Record<string, never>, Props> {
 			{ readOnlyHint: true, destructiveHint: false, openWorldHint: false },
 			async ({ ids, max_characters_per_file }) => {
 				const uniqueIds = [...new Set(ids)];
-				// Fetch metadata for every file. Besides preserving the real name and MIME\n\t\t\t\t// type, this avoids dereferencing a null `files.info` result in\n\t\t\t\t// getTeamleaderFile and lets us enforce the declared per-file size limit\n\t\t\t\t// before downloading the batch.\n\t\t\t\tconst files = await Promise.all(uniqueIds.map((id) => this.getTeamleaderFile(id)));
+				// Fetch metadata for every file. Besides preserving the real name and MIME
+				// type, this avoids dereferencing a null `files.info` result in
+				// getTeamleaderFile and lets us enforce the declared per-file size limit
+				// before downloading the batch.
+				const files = await Promise.all(uniqueIds.map((id) => this.getTeamleaderFile(id)));
 				return this.result({ files: await this.extractFiles(files, max_characters_per_file) });
 			},
 		);
