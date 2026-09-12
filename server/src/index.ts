@@ -4,6 +4,7 @@ import { McpAgent } from "agents/mcp";
 import { z } from "zod";
 import { buildDraftInvoicePayload } from "./invoice";
 import { buildTaskCreatePayload, findTaskDuplicate } from "./task";
+import { registerTaskManagement, TASK_DATE } from "./task-management";
 import { TeamleaderHandler } from "./teamleader-handler";
 import { assertSafeInternalMessageHtml, assertWriteScope, readResponseWithLimit } from "./safety";
 import { deleteToken, teamleaderCall, uploadTeamleaderFile, type Props } from "./utils";
@@ -85,9 +86,10 @@ function escapeHtml(value: string) {
 }
 
 export class TeamleaderMCP extends McpAgent<Env, Record<string, never>, Props> {
-	server = new McpServer({ name: "APA Teamleader Secure", version: "0.8.4" });
+	server = new McpServer({ name: "APA Teamleader Secure", version: "0.8.5" });
 
 	async init() {
+		registerTaskManagement(this.server, (endpoint, body) => teamleaderCall(this.env, this.props!.userId, endpoint, body), () => this.requireWriteScope());
 		this.server.tool(
 			"disconnect_teamleader",
 			"Disconnect Teamleader and immediately delete the stored Teamleader access and refresh tokens. This stops all subsequent Teamleader access until the user reconnects. Call only after the user explicitly asks to disconnect and confirms the deletion.",
@@ -183,12 +185,13 @@ export class TeamleaderMCP extends McpAgent<Env, Record<string, never>, Props> {
 				customer_id: TEAMLEADER_ID.optional(),
 				completed: z.boolean().optional(),
 				scheduled: z.boolean().optional(),
-				due_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-				due_by: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+				due_from: TASK_DATE.optional(),
+				due_by: TASK_DATE.optional(),
 				page: PAGE,
 			},
 			{ readOnlyHint: true, destructiveHint: false, openWorldHint: false },
 			async ({ term, user_id, customer_type, customer_id, completed, scheduled, due_from, due_by, page }) => {
+				if (due_from && due_by && due_from > due_by) throw new Error("due_from must not be after due_by");
 				if (Boolean(customer_type) !== Boolean(customer_id)) throw new Error("customer_type and customer_id must be provided together");
 				const filter = {
 					...(term ? { term } : {}),
@@ -217,11 +220,11 @@ export class TeamleaderMCP extends McpAgent<Env, Record<string, never>, Props> {
 
 		this.server.tool(
 			"create_task",
-			"Create one Teamleader task after validating every referenced record and checking for a likely duplicate. Retrieve the customer, work type, optional assignee, deal and ticket first, then ask the user to confirm the exact title, description, due date, duration, assignee and links immediately before setting confirmed=true.",
+			"Create one Teamleader task after validating referenced records and checking for a likely duplicate. Use the user's explicit request as authorization when the title, due date, work type, assignee and links are clear. Ask only for missing or ambiguous values. Set confirmed=true only for an authorized creation. Re-read the created task.",
 			{
 				title: z.string().trim().min(1).max(255),
 				description: z.string().max(50_000).optional(),
-				due_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+				due_on: TASK_DATE,
 				work_type_id: TEAMLEADER_ID,
 				estimated_duration_minutes: z.number().int().min(1).max(1440).optional(),
 				assignee_type: z.enum(["user", "team"]).optional(),
@@ -231,7 +234,7 @@ export class TeamleaderMCP extends McpAgent<Env, Record<string, never>, Props> {
 				deal_id: TEAMLEADER_ID.optional(),
 				ticket_id: TEAMLEADER_ID.optional(),
 				project_id: TEAMLEADER_ID.optional(),
-				confirmed: z.literal(true).describe("True only after the user explicitly confirms this exact task creation."),
+				confirmed: z.literal(true).describe("True only when the user explicitly authorized this exact task creation."),
 			},
 			{ readOnlyHint: false, destructiveHint: false, openWorldHint: false },
 			async ({ title, description, due_on, work_type_id, estimated_duration_minutes, assignee_type, assignee_id, customer_type, customer_id, deal_id, ticket_id, project_id, confirmed: _confirmed }) => {

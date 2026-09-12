@@ -24,7 +24,19 @@ This plugin connects ChatGPT and Codex to Teamleader Focus through a remote MCP 
 
 ## Required Teamleader configuration
 
-Keep only the scopes required by the exposed tools: `users`, `contacts`, `companies`, `deals`, `departments`, `invoices`, `tickets`, and files if Teamleader exposes it separately for the integration. Remove unrelated scopes.
+Keep only the scopes required by the exposed tools: `users`, `contacts`, `companies`, `deals`, `departments`, `invoices`, `tickets`, `tasks`, `events`, and files if Teamleader exposes it separately for the integration. Task scheduling and verification need `events` in addition to `tasks`. Work types and teams must be readable; project links require access to the new projects module. Remove unrelated scopes.
+
+## Task management in 0.8.5
+
+- Existing task search, detail and creation are complemented by updates, reassignment, due-date changes, completion, reopening and explicitly confirmed deletion.
+- Calendar tools list, schedule, move and cancel exact task slots, verify event ownership and compare saved timestamps. Repeated identical schedule requests reuse an existing slot.
+- Writes verify the OAuth write grant. Update results compare requested fields with the saved task; an `ok: false` response must never be presented as success.
+- `get_task_capabilities` reports capabilities and limits, not live access status.
+- The documented API has no direct task file subject in `files.upload`; `list_task_attachments` resolves the linked ticket and lists its shared files. Upload via the existing ticket tool after confirming that destination.
+- Calendar scheduling does not program a notification. Configurable task reminders and task recurrence are not exposed by the documented API. Use a separately requested Codex reminder when appropriate, and verify its creation independently.
+- Deploying code does not refresh the client's cached MCP catalogue or grant missing Teamleader scopes. Verify both before declaring task management operational.
+
+API contracts checked against the official [tasks](https://github.com/teamleadercrm/api/blob/master/src/08-tasks/tasks.apib), [events](https://github.com/teamleadercrm/api/blob/master/src/04-calendar/events.apib) and [files](https://github.com/teamleadercrm/api/blob/master/src/10-files/files.apib) definitions.
 
 The production redirect URI must be exactly:
 
