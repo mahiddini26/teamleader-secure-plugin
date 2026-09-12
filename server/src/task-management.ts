@@ -105,7 +105,7 @@ export function registerTaskManagement(server: McpServer, call: TaskApi, require
 		calendar: ["list_task_events", "reschedule_task_event", "cancel_task_event"],
 		attachments: "Use list_task_attachments to resolve the linked ticket, then upload_ticket_attachment. The PDF is stored on the ticket, not the task. No direct task upload in the documented API.",
 		reminders: "Calendar scheduling is supported. Configurable notification reminders and recurrence are not exposed by the documented tasks API. A separate Codex reminder must be requested and created explicitly.",
-		required_teamleader_scopes: ["tasks", "events"],
+		required_teamleader_scopes: ["todos", "events"],
 	}));
 	server.tool("list_teams", "List available teams for task assignment.", {}, READ, async () => result(await call("teams.list")));
 	server.tool("update_task", "Update an exact task, including its due date, duration, assignee or links. Use the user's explicit instruction as authorization when the exact task and values are clear; ask only for missing or ambiguous values. Re-read and compare the result.", TASK_UPDATE.shape, WRITE, async input => result(await updateTask(call, requireWrite, input)));
@@ -119,7 +119,7 @@ export function registerTaskManagement(server: McpServer, call: TaskApi, require
 		const remaining = data(await call("tasks.list", { filter: { ids: [id] }, page: { number: 1, size: 1 } }));
 		return result({ ok: Array.isArray(remaining) && remaining.length === 0, id, deleted: Array.isArray(remaining) && remaining.length === 0 });
 	});
-	server.tool("schedule_task", "Schedule the exact task in the Teamleader calendar using ISO datetimes with explicit timezone offsets. Requires tasks and events scopes. This does NOT configure a reminder notification. Use the user's explicit task and time instruction as authorization.", { id: ID, starts_at: DATETIME, ends_at: DATETIME, confirmed: CONFIRMED }, WRITE, async ({ id, starts_at, ends_at }) => result(await scheduleTask(call, requireWrite, id, starts_at, ends_at)));
+	server.tool("schedule_task", "Schedule the exact task in the Teamleader calendar using ISO datetimes with explicit timezone offsets. Requires Todos and Events scopes. This does NOT configure a reminder notification. Use the user's explicit task and time instruction as authorization.", { id: ID, starts_at: DATETIME, ends_at: DATETIME, confirmed: CONFIRMED }, WRITE, async ({ id, starts_at, ends_at }) => result(await scheduleTask(call, requireWrite, id, starts_at, ends_at)));
 	server.tool("list_task_events", "List calendar slots for one exact task. Requires events scope.", { id: ID, page: PAGE }, READ, async ({ id, page }) => {
 		await getTask(call, id);
 		return result(await call("events.list", { filter: { task_id: id }, page }));

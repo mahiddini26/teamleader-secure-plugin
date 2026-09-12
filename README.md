@@ -24,7 +24,7 @@ This plugin connects ChatGPT and Codex to Teamleader Focus through a remote MCP 
 
 ## Required Teamleader configuration
 
-Keep only the scopes required by the exposed tools: `users`, `contacts`, `companies`, `deals`, `departments`, `invoices`, `tickets`, `tasks`, `events`, and files if Teamleader exposes it separately for the integration. Task scheduling and verification need `events` in addition to `tasks`. Work types and teams must be readable; project links require access to the new projects module. Remove unrelated scopes.
+Keep only the scopes required by the exposed tools: `users`, `contacts`, `companies`, `deals`, `departments`, `invoices`, `tickets`, `todos` (Todos), `events` (Events), and files if Teamleader exposes it separately for the integration. Task scheduling and verification need `events` in addition to `todos`. Work types and teams must be readable; project links require access to the new projects module. Remove unrelated scopes.
 
 ## Task management in 0.8.5
 
