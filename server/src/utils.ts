@@ -184,7 +184,7 @@ export async function teamleaderCall(
 	endpoint: string,
 	body: Record<string, unknown> = {},
 ) {
-	if (!/^[a-zA-Z0-9.-]+$/.test(endpoint)) throw new Error("Invalid endpoint");
+	if (!/^[a-zA-Z0-9.-]+$/.test(endpoint) && endpoint !== "projects-v2/projects.info") throw new Error("Invalid endpoint");
 	const token = await loadFreshToken(env, userId);
 	const response = await fetch(`${API_ORIGIN}/${endpoint}`, {
 		method: "POST",

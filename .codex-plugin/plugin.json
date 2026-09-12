@@ -1,6 +1,6 @@
 {
   "name": "teamleader-secure",
-  "version": "0.8.3",
+  "version": "0.8.5",
   "description": "Secure Teamleader Focus access with targeted reads and explicitly confirmed updates.",
   "author": {
     "name": "APA ASSURANCES",
@@ -11,7 +11,7 @@
   "interface": {
     "displayName": "APA Teamleader",
     "shortDescription": "Securely consult and update Teamleader Focus.",
-    "longDescription": "OAuth-protected access to authorized Teamleader Focus contacts, companies, opportunities, users, invoices, tickets and attachments, with explicit confirmation before updates.",
+    "longDescription": "OAuth-protected access to Teamleader Focus contacts, companies, opportunities, tasks, task calendar slots, users, draft invoices, tickets and attachments. Task updates require a clear user instruction; permanent deletion requires explicit confirmation.",
     "developerName": "APA ASSURANCES",
     "category": "Productivity",
     "capabilities": ["Interactive", "Read", "Write"],
