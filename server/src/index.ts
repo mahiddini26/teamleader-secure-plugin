@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import { z } from "zod";
 import { buildDraftInvoicePayload } from "./invoice";
+import { buildTaskCreatePayload, findTaskDuplicate } from "./task";
 import { TeamleaderHandler } from "./teamleader-handler";
 import { assertSafeInternalMessageHtml, assertWriteScope, readResponseWithLimit } from "./safety";
 import { deleteToken, teamleaderCall, uploadTeamleaderFile, type Props } from "./utils";
@@ -237,17 +238,23 @@ export class TeamleaderMCP extends McpAgent<Env, Record<string, never>, Props> {
 				this.requireWriteScope();
 				if (Boolean(assignee_type) !== Boolean(assignee_id)) throw new Error("assignee_type and assignee_id must be provided together");
 				if (Boolean(customer_type) !== Boolean(customer_id)) throw new Error("customer_type and customer_id must be provided together");
+				const validateListedReference = async (endpoint: "workTypes.list" | "teams.list", id: string, label: string) => {
+					const response = await teamleaderCall(this.env, this.props!.userId, endpoint, {
+						filter: { ids: [id] },
+						...(endpoint === "workTypes.list" ? { page: { number: 1, size: 1 } } : {}),
+					}) as { data?: Array<{ id?: string }> };
+					if (!response.data?.some((item) => item.id === id)) throw new Error(`${label} not found: ${id}`);
+				};
 				const validations: Array<Promise<unknown>> = [
-					teamleaderCall(this.env, this.props!.userId, "workTypes.info", { id: work_type_id }),
+					validateListedReference("workTypes.list", work_type_id, "Work type"),
 				];
 				if (assignee_type === "user" && assignee_id) validations.push(teamleaderCall(this.env, this.props!.userId, "users.info", { id: assignee_id }));
-				if (assignee_type === "team" && assignee_id) validations.push(teamleaderCall(this.env, this.props!.userId, "teams.info", { id: assignee_id }));
+				if (assignee_type === "team" && assignee_id) validations.push(validateListedReference("teams.list", assignee_id, "Team"));
 				if (customer_type && customer_id) validations.push(teamleaderCall(this.env, this.props!.userId, customer_type === "company" ? "companies.info" : "contacts.info", { id: customer_id }));
 				if (deal_id) validations.push(teamleaderCall(this.env, this.props!.userId, "deals.info", { id: deal_id }));
 				if (ticket_id) validations.push(teamleaderCall(this.env, this.props!.userId, "tickets.info", { id: ticket_id }));
 				if (project_id) validations.push(teamleaderCall(this.env, this.props!.userId, "projects-v2/projects.info", { id: project_id }));
 				const duplicateFilter = {
-					term: title,
 					completed: false,
 					due_from: due_on,
 					due_by: due_on,
@@ -258,22 +265,12 @@ export class TeamleaderMCP extends McpAgent<Env, Record<string, never>, Props> {
 					Promise.all(validations),
 					teamleaderCall(this.env, this.props!.userId, "tasks.list", { filter: duplicateFilter, page: { number: 1, size: 20 } }),
 				]) as [unknown, { data?: Array<{ id?: string; title?: string; due_on?: string }> }];
-				const duplicate = (duplicates.data || []).find((task) =>
-					this.normalize(task.title || "") === this.normalize(title) && task.due_on === due_on,
-				);
+				const duplicate = findTaskDuplicate(duplicates.data || [], title, due_on, (value) => this.normalize(value));
 				if (duplicate?.id) throw new Error(`An open task with the same title and due date already exists: ${duplicate.id}`);
-				const created = await teamleaderCall(this.env, this.props!.userId, "tasks.create", {
-					title,
-					...(description ? { description } : {}),
-					due_on,
-					work_type_id,
-					...(estimated_duration_minutes ? { estimated_duration: { unit: "min", value: estimated_duration_minutes } } : {}),
-					...(assignee_type && assignee_id ? { assignee: { type: assignee_type, id: assignee_id } } : {}),
-					...(customer_type && customer_id ? { customer: { type: customer_type, id: customer_id } } : {}),
-					...(deal_id ? { deal_id } : {}),
-					...(ticket_id ? { ticket_id } : {}),
-					...(project_id ? { project_id } : {}),
-				}) as { data?: { id?: string }; id?: string };
+				const created = await teamleaderCall(this.env, this.props!.userId, "tasks.create", buildTaskCreatePayload({
+					title, description, due_on, work_type_id, estimated_duration_minutes,
+					assignee_type, assignee_id, customer_type, customer_id, deal_id, ticket_id, project_id,
+				})) as { data?: { id?: string }; id?: string };
 				const id = created.data?.id || created.id;
 				if (!id) throw new Error("Teamleader did not return the created task ID");
 				return this.result({ ok: true, id, verified: await teamleaderCall(this.env, this.props!.userId, "tasks.info", { id }) });
