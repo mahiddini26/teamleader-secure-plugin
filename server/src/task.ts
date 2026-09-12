@@ -50,3 +50,19 @@ export function findTaskDuplicate(
 		normalize(task.title || "") === normalize(title) && task.due_on === dueOn,
 	);
 }
+
+export async function checkTaskDuplicate(
+	call: (endpoint: string, body: Record<string, unknown>) => Promise<unknown>,
+	filter: Record<string, unknown>, title: string, dueOn: string,
+	normalize: (value: string) => string,
+) {
+	// tasks.list.term searches descriptions, not titles. Read all matching dates.
+	for (let number = 1; number <= 100; number++) {
+		const response = await call("tasks.list", { filter, page: { number, size: 100 } }) as { data?: ExistingTask[] };
+		if (!Array.isArray(response.data)) throw new Error("Unable to verify existing tasks; creation stopped");
+		const duplicate = findTaskDuplicate(response.data, title, dueOn, normalize);
+		if (duplicate) return duplicate;
+		if (response.data.length < 100) return undefined;
+	}
+	throw new Error("Duplicate search incomplete; creation stopped");
+}

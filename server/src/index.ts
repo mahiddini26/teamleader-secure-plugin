@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { McpAgent } from "agents/mcp";
 import { z } from "zod";
 import { buildDraftInvoicePayload } from "./invoice";
-import { buildTaskCreatePayload, findTaskDuplicate } from "./task";
+import { buildTaskCreatePayload, checkTaskDuplicate } from "./task";
 import { registerTaskManagement, TASK_DATE } from "./task-management";
 import { TeamleaderHandler } from "./teamleader-handler";
 import { assertSafeInternalMessageHtml, assertWriteScope, readResponseWithLimit } from "./safety";
@@ -258,18 +258,16 @@ export class TeamleaderMCP extends McpAgent<Env, Record<string, never>, Props> {
 				if (ticket_id) validations.push(teamleaderCall(this.env, this.props!.userId, "tickets.info", { id: ticket_id }));
 				if (project_id) validations.push(teamleaderCall(this.env, this.props!.userId, "projects-v2/projects.info", { id: project_id }));
 				const duplicateFilter = {
-					completed: false,
 					due_from: due_on,
 					due_by: due_on,
 					...(assignee_type === "user" && assignee_id ? { user_id: assignee_id } : {}),
 					...(customer_type && customer_id ? { customer: { type: customer_type, id: customer_id } } : {}),
 				};
-				const [, duplicates] = await Promise.all([
+				const [, duplicate] = await Promise.all([
 					Promise.all(validations),
-					teamleaderCall(this.env, this.props!.userId, "tasks.list", { filter: duplicateFilter, page: { number: 1, size: 20 } }),
-				]) as [unknown, { data?: Array<{ id?: string; title?: string; due_on?: string }> }];
-				const duplicate = findTaskDuplicate(duplicates.data || [], title, due_on, (value) => this.normalize(value));
-				if (duplicate?.id) throw new Error(`An open task with the same title and due date already exists: ${duplicate.id}`);
+					checkTaskDuplicate((endpoint, body) => teamleaderCall(this.env, this.props!.userId, endpoint, body), duplicateFilter, title, due_on, (value) => this.normalize(value)),
+				]);
+				if (duplicate?.id) throw new Error(`A task with the same title and due date already exists: ${duplicate.id}`);
 				const created = await teamleaderCall(this.env, this.props!.userId, "tasks.create", buildTaskCreatePayload({
 					title, description, due_on, work_type_id, estimated_duration_minutes,
 					assignee_type, assignee_id, customer_type, customer_id, deal_id, ticket_id, project_id,
